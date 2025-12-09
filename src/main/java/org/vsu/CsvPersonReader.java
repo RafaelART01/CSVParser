@@ -7,6 +7,7 @@ import com.opencsv.exceptions.CsvValidationException;
 import java.io.*;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -31,36 +32,37 @@ public class CsvPersonReader {
             try (CSVReader reader = new CSVReaderBuilder(new InputStreamReader(in))
                     .withCSVParser(parser)
                     .build()) {
-
-                String[] allFields = reader.readNext();
-
-                if (allFields == null || allFields.length == 0) {
+                // ← ← ← ← ← ОБЯЗАТЕЛЬНО: пропускаем заголовок
+                String[] header = reader.readNext();
+                if (header == null) {
                     return Collections.emptyList();
                 }
 
+                // Теперь каждая следующая строка — данные
+                String[] line;
                 List<Person> persons = new ArrayList<>();
-                int totalRecords = allFields.length / 6;
 
-                for (int i = 0; i < totalRecords; i++) {
-                    int start = i * 6;
-                    String idStr = allFields[start];
-                    String name = allFields[start + 1];
-                    String gender = allFields[start + 2];
-                    String dateStr = allFields[start + 3];
-                    String divisionCode = allFields[start + 4];
-                    String salaryStr = allFields[start + 5];
+                int recordIndex = 0;
+                while ((line = reader.readNext()) != null) {
+                    if (line.length < 6) {
+                        System.err.println("⚠️ Пропущена короткая строка #" + (++recordIndex) + ": " + Arrays.toString(line));
+                        continue;
+                    }
 
                     try {
-                        int id = Integer.parseInt(idStr);
-                        LocalDate birthDate = LocalDate.parse(dateStr, DATE_FORMAT);
-                        int salary = Integer.parseInt(salaryStr);
+                        int id = Integer.parseInt(line[0]);
+                        String name = line[1];
+                        String gender = line[2];
+                        LocalDate birthDate = LocalDate.parse(line[3], DATE_FORMAT);
+                        String divisionCode = line[4];
+                        int salary = Integer.parseInt(line[5]);
 
                         Department dept = deptMap.computeIfAbsent(divisionCode,
-                                code -> new Department(nextDeptId.getAndIncrement(), "Department " + code));
+                                code -> new Department(nextDeptId.getAndIncrement(), code));
 
                         persons.add(new Person(id, name, gender, birthDate, dept, salary));
-                    } catch (Exception e) {
-                        System.err.println("Ошибка в записи #" + (i + 1) + ": " + Arrays.toString(Arrays.copyOfRange(allFields, start, start + 6)));
+                    } catch (NumberFormatException | DateTimeParseException e) {
+                        System.err.println("❌ Ошибка парсинга в строке #" + (++recordIndex) + ": " + Arrays.toString(line) + " — " + e.getMessage());
                     }
                 }
 
